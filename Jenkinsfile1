@@ -80,28 +80,26 @@ pipeline {
 
         stage('SonarQube Analysis') {
 
-            steps {
+    steps {
 
-                dir('bookmyshow-app') {
+        dir('bookmyshow-app') {
 
-                    script {
+            withSonarQubeEnv('sq-token') {
 
-                        def scannerHome = tool 'sonar-scanner'
+                sh '''
+                echo "Running SonarQube Analysis..."
 
-                        withSonarQubeEnv('sonar-token') {
+                sonar-scanner \
+                -Dsonar.projectKey=Book-my-show \
+                -Dsonar.projectName=Book-my-show \
+                -Dsonar.sources=src
 
-                            sh """
-                            ${scannerHome}/bin/sonar-scanner \
-                            -Dsonar.projectKey=Book-my-show \
-                            -Dsonar.projectName=Book-my-show \
-                            -Dsonar.sources=src
-                            """
-                        }
-                    }
-                }
+                echo "SonarQube Analysis Completed"
+                '''
             }
         }
-
+    }
+}
         stage('Quality Gate') {
 
             steps {
