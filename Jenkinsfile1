@@ -1,176 +1,230 @@
 pipeline {
+
     agent any
 
     tools {
         jdk 'jdk21'
-        nodejs 'node18'
+        nodejs 'node20'
+    }
+
+    options {
+        timeout(time: 60, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
     environment {
-    DOCKER_IMAGE = "rajeshtutta123/book-my-show"
-    RECIPIENTS = "rajeshtutta123@gmail.com"
-    APP_NAME = "book-my-show"
-    APP_PORT = "3000"
-}
+
+        DOCKER_IMAGE = "rajeshtutta123/book-my-show"
+        RECIPIENTS   = "rajeshtutta123@gmail.com"
+
+        APP_NAME     = "book-my-show"
+        APP_PORT     = "3000"
+
+        SONAR_HOME   = tool 'sonar-scanner'
+    }
 
     stages {
 
         stage('Clean Workspace') {
+
             steps {
+
                 cleanWs()
+
+                sh '''
+                echo "Workspace Cleaned"
+                '''
             }
         }
 
-        stage('Clone Repo') {
+        stage('Clone Repository') {
+
             steps {
+
                 git branch: 'main',
                 url: 'https://github.com/rajeshtutta/book-my-show1.git'
             }
         }
 
-        stage('Check Files') {
+        stage('Verify Project Structure') {
+
             steps {
+
                 sh '''
                 echo "Current Directory:"
                 pwd
 
-                echo "Listing Files:"
+                echo "Listing Files"
                 ls -la
 
-                echo "Finding package.json"
+                echo "Searching package.json"
                 find . -name package.json
+
+                echo "Node Version"
+                node -v
+
+                echo "NPM Version"
+                npm -v
                 '''
             }
         }
 
         stage('Install Dependencies') {
+
             steps {
+
                 dir('bookmyshow-app') {
 
-                    sh '''
-                    rm -rf node_modules package-lock.json
+                    timeout(time: 20, unit: 'MINUTES') {
 
-                    npm install
-                    '''
+                        sh '''
+                        echo "Installing Dependencies..."
+
+                        npm ci
+
+                        echo "Dependencies Installed Successfully"
+                        '''
+                    }
                 }
             }
         }
 
-        
         stage('Run Tests') {
+
             steps {
+
                 dir('bookmyshow-app') {
 
                     sh '''
-                    npm test || true
+                    echo "Running Tests..."
+
+                    npm test -- --watchAll=false || true
                     '''
                 }
             }
         }
 
-       stage('SonarQube Analysis') {
+        stage('SonarQube Analysis') {
 
-    steps {
-
-        dir('bookmyshow-app') {
-
-            script {
-
-                def scannerHome = tool 'sonar-scanner'
-
-                withSonarQubeEnv('sq-token') {
-
-                    sh """
-                    ${scannerHome}/bin/sonar-scanner \
-                    -Dsonar.projectKey=Book-my-show \
-                    -Dsonar.projectName=Book-my-show \
-                    -Dsonar.sources=src
-                    """
-                }
-            }
-        }
-    }
-}
-        stage('Quality Gate') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
 
-                    waitForQualityGate abortPipeline: false
+                dir('bookmyshow-app') {
+
+                    withSonarQubeEnv('sq-token') {
+
+                        sh """
+                        ${SONAR_HOME}/bin/sonar-scanner \
+                        -Dsonar.projectKey=Book-my-show \
+                        -Dsonar.projectName=Book-my-show \
+                        -Dsonar.sources=src
+                        """
+                    }
                 }
             }
         }
 
-       stage('Build Application') {
+        stage('Quality Gate') {
 
-    steps {
+            steps {
 
-        dir('bookmyshow-app') {
+                timeout(time: 10, unit: 'MINUTES') {
 
-            sh '''
-            export NODE_OPTIONS=--openssl-legacy-provider
-            npm run build
-            '''
+                    waitForQualityGate abortPipeline: true
+                }
+            }
         }
-    }
-}
-        stage('Package Artifact') {
+
+        stage('Build Application') {
+
             steps {
 
                 dir('bookmyshow-app') {
 
                     sh '''
+                    echo "Building React Application..."
+
+                    export NODE_OPTIONS=--openssl-legacy-provider
+
+                    npm run build
+
+                    echo "Build Completed"
+                    '''
+                }
+            }
+        }
+
+        stage('Package Artifact') {
+
+            steps {
+
+                dir('bookmyshow-app') {
+
+                    sh '''
+                    echo "Packaging Build Files"
+
                     zip -r ../Book-my-show-build.zip build/
                     '''
                 }
             }
         }
 
-        stage('Upload to Nexus') {
+        stage('Upload Artifact to Nexus') {
 
-    steps {
+            steps {
 
-        withCredentials([
-            usernamePassword(
-                credentialsId: 'nexus-cred',
-                usernameVariable: 'NEXUS_USER',
-                passwordVariable: 'NEXUS_PASS'
-            )
-        ]) {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'nexus-cred',
+                        usernameVariable: 'NEXUS_USER',
+                        passwordVariable: 'NEXUS_PASS'
+                    )
+                ]) {
 
-            sh '''
-            echo "Uploading artifact to Nexus..."
+                    sh '''
+                    echo "Uploading Artifact to Nexus Repository..."
 
-            curl -v -u $NEXUS_USER:$NEXUS_PASS \
-            --upload-file Book-my-show-build.zip \
-            http://localhost:8081/repository/Book-my-show/Book-my-show-build-${BUILD_NUMBER}.zip
+                    curl -v -u $NEXUS_USER:$NEXUS_PASS \
+                    --upload-file Book-my-show-build.zip \
+                    http://localhost:8081/repository/Book-my-show/Book-my-show-build-${BUILD_NUMBER}.zip
 
-            echo "Upload completed"
-            '''
+                    echo "Artifact Uploaded Successfully"
+                    '''
+                }
+            }
         }
-    }
-}
 
         stage('Docker Build') {
+
             steps {
 
                 sh '''
+                echo "Removing Old Docker Images"
+
+                docker image prune -f || true
+
+                echo "Building Docker Image"
+
                 docker build \
                 -t $DOCKER_IMAGE:${BUILD_NUMBER} \
                 -t $DOCKER_IMAGE:latest \
                 -f bookmyshow-app/Dockerfile \
                 bookmyshow-app
+
+                echo "Docker Build Completed"
                 '''
             }
         }
+
         stage('Install Trivy') {
-    steps {
 
-        sh '''
-        if ! command -v trivy &> /dev/null
-        then
-            echo "Installing Trivy..."
+            steps {
 
-            sudo tee /etc/yum.repos.d/trivy.repo <<EOF
+                sh '''
+                if ! command -v trivy &> /dev/null
+                then
+                    echo "Installing Trivy..."
+
+                    sudo tee /etc/yum.repos.d/trivy.repo <<EOF
 [trivy]
 name=Trivy repository
 baseurl=https://aquasecurity.github.io/trivy-repo/rpm/releases/\\$basearch/
@@ -178,27 +232,34 @@ gpgcheck=0
 enabled=1
 EOF
 
-            sudo yum install trivy -y
+                    sudo yum install trivy -y
 
-        else
-            echo "Trivy already installed"
-        fi
+                else
+                    echo "Trivy Already Installed"
+                fi
 
-        trivy --version
-        '''
-    }
-}
+                trivy --version
+                '''
+            }
+        }
 
         stage('Trivy Image Scan') {
+
             steps {
 
                 sh '''
-                trivy image $DOCKER_IMAGE:latest > trivyimage.txt
+                echo "Scanning Docker Image..."
+
+                trivy image --severity HIGH,CRITICAL \
+                $DOCKER_IMAGE:latest > trivyimage.txt
+
+                cat trivyimage.txt
                 '''
             }
         }
 
         stage('Docker Push') {
+
             steps {
 
                 withCredentials([
@@ -210,7 +271,8 @@ EOF
                 ]) {
 
                     sh '''
-                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    echo $DOCKER_PASS | docker login \
+                    -u $DOCKER_USER --password-stdin
 
                     docker push $DOCKER_IMAGE:${BUILD_NUMBER}
 
@@ -223,16 +285,17 @@ EOF
         }
 
         stage('Deploy Container') {
+
             steps {
 
                 sh '''
-                echo "Stopping old container..."
+                echo "Stopping Existing Container..."
 
                 docker stop $APP_NAME || true
 
                 docker rm $APP_NAME || true
 
-                echo "Starting new container..."
+                echo "Deploying New Container..."
 
                 docker run -d \
                 --restart=always \
@@ -254,13 +317,14 @@ EOF
 
             emailext(
                 subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+
                 body: """
-                Build SUCCESSFUL
+                Build Successfully Completed
 
                 Docker Image:
                 ${DOCKER_IMAGE}:latest
 
-                Application:
+                Application URL:
                 http://15.207.104.234:${APP_PORT}
 
                 Jenkins Build:
@@ -277,10 +341,11 @@ EOF
 
             emailext(
                 subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: """
-                Build FAILED
 
-                Check Jenkins Logs:
+                body: """
+                Build Failed
+
+                Check Jenkins Console:
                 ${env.BUILD_URL}
                 """,
 
@@ -291,7 +356,7 @@ EOF
         always {
 
             archiveArtifacts(
-                artifacts: 'Book-my-show-build.zip',
+                artifacts: 'Book-my-show-build.zip,trivyimage.txt',
                 fingerprint: true
             )
         }
