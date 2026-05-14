@@ -117,64 +117,7 @@ stage('Quality Gate') {
             }
         }
 
-        stage('Build Application') {
-
-            steps {
-
-                dir('bookmyshow-app') {
-
-                    sh '''
-                    echo "Building React application..."
-
-                    export NODE_OPTIONS=--openssl-legacy-provider
-
-                    npm run build
-
-                    echo "Build completed successfully"
-                    '''
-                }
-            }
-        }
-
-        stage('Package Artifact') {
-
-            steps {
-
-                dir('bookmyshow-app') {
-
-                    sh '''
-                    echo "Packaging build files..."
-
-                    zip -r ../Book-my-show-build.zip build/
-                    '''
-                }
-            }
-        }
-
-        stage('Upload to Nexus') {
-
-            steps {
-
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'nexus-cred',
-                        usernameVariable: 'NEXUS_USER',
-                        passwordVariable: 'NEXUS_PASS'
-                    )
-                ]) {
-
-                    sh '''
-                    echo "Uploading artifact to Nexus..."
-
-                    curl -v -u $NEXUS_USER:$NEXUS_PASS \
-                    --upload-file Book-my-show-build.zip \
-                    http://localhost:8081/repository/Book-my-show/Book-my-show-build-${BUILD_NUMBER}.zip
-
-                    echo "Upload completed"
-                    '''
-                }
-            }
-        }
+       
 
         stage('Docker Build') {
 
