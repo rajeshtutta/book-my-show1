@@ -57,57 +57,72 @@ stages {
     }
 
     
-    stage('Run Tests') {
-        steps {
-            dir('bookmyshow-app') {
+   stage('Run Tests') {
 
-                sh '''
-                npm test || true
-                '''
-            }
+    steps {
+
+        dir('bookmyshow-app') {
+
+            sh '''
+            echo "Running test cases..."
+
+            npm test -- --watchAll=false || true
+            '''
         }
     }
+}
 
-   stage('SonarQube Analysis') {
+stage('SonarQube Analysis') {
 
-steps {
+    steps {
 
-    dir('bookmyshow-app') {
+        dir('bookmyshow-app') {
 
-        script {
+            script {
 
-            def scannerHome = tool 'sonar-scanner'
+                def scannerHome = tool 'sonar-scanner'
 
-            withSonarQubeEnv('sq-token') {
+                withSonarQubeEnv('sq-token') {
 
-                sh """
-                ${scannerHome}/bin/sonar-scanner \
-                -Dsonar.projectKey=Book-my-show \
-                -Dsonar.projectName=Book-my-show \
-                -Dsonar.sources=src
-                """
+                    sh """
+                    ${scannerHome}/bin/sonar-scanner \
+                    -Dsonar.projectKey=Book-my-show \
+                    -Dsonar.projectName=Book-my-show \
+                    -Dsonar.sources=src
+                    """
+                }
             }
         }
     }
 }
 
-}stage('Quality Gate') {steps {timeout(time: 5, unit: 'MINUTES') {
+stage('Quality Gate') {
 
-                waitForQualityGate abortPipeline: false
-            }
+    steps {
+
+        timeout(time: 10, unit: 'MINUTES') {
+
+            waitForQualityGate abortPipeline: false
         }
     }
+}
 
-   stage('Build Application') {
+stage('Build Application') {
 
-steps {
+    steps {
 
-    dir('bookmyshow-app') {
+        dir('bookmyshow-app') {
 
-        sh '''
-        export NODE_OPTIONS=--openssl-legacy-provider
-        npm run build
-        '''
+            sh '''
+            echo "Building React application..."
+
+            export NODE_OPTIONS=--openssl-legacy-provider
+
+            npm run build
+
+            echo "Build completed successfully"
+            '''
+        }
     }
 }
 
