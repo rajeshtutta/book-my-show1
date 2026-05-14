@@ -84,7 +84,7 @@ pipeline {
 
         dir('bookmyshow-app') {
 
-            withSonarQubeEnv('sonar-token') {
+            withSonarQubeEnv('sonar-scanner') {
 
                 sh """
                     echo "Running SonarQube Analysis..."
