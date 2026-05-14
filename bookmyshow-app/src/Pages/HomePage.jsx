@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import { useDispatch } from "react-redux";
+
 import { AddCarousel } from "../Components/HomePage/AddCarousel";
 import { Entertainment } from "../Components/HomePage/Entertainment";
 import { LatestEvents } from "../Components/HomePage/LatestEvents";
@@ -8,10 +9,19 @@ import { OutdoorEvents } from "../Components/HomePage/OutdoorEvents";
 import { PopularEvents } from "../Components/HomePage/PopularEvents";
 import { PremierMovies } from "../Components/HomePage/PremierMovies";
 import { RecommendedMovies } from "../Components/HomePage/RecommendedMovies";
-import { getLatestEvents, getLaughterEvents, getMovies, getOutdoorEvents, getPopularEvents } from "../Redux/app/actions";
+
+import {
+    getLatestEvents,
+    getLaughterEvents,
+    getMovies,
+    getOutdoorEvents,
+    getPopularEvents
+} from "../Redux/app/actions";
+
 import { getBookingDetails } from "../Redux/booking/action";
 
 export const HomePage = () => {
+
     const dispatch = useDispatch();
 
     useEffect(() => {
@@ -21,7 +31,8 @@ export const HomePage = () => {
         dispatch(getPopularEvents());
         dispatch(getLatestEvents());
         dispatch(getBookingDetails());
-    }, [])
+    }, [dispatch]);
+
     return (
         <div style={{ backgroundColor: "#F2F5F9" }}>
             <AddCarousel />
@@ -29,11 +40,14 @@ export const HomePage = () => {
             <Entertainment />
             <PremierMovies />
             <OutdoorEvents />
+
             <div style={{ backgroundColor: "#F2F2F2" }}>
                 <LaughterEvents />
                 <PopularEvents />
                 <LatestEvents />
             </div>
         </div>
-    )
-}
+    );
+};
+
+export default HomePage;
