@@ -11,7 +11,7 @@ pipeline {
         DOCKER_IMAGE = "rajeshtutta123/book-my-show"
         RECIPIENTS = "rajeshtutta123@gmail.com"
         APP_NAME = "book-my-show"
-        APP_PORT = "3000"
+        APP_PORT = "1999"
     }
 
     stages {
