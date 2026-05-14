@@ -86,21 +86,21 @@ pipeline {
 
             withSonarQubeEnv('sonar-token') {
 
-                sh '''
-                echo "Running SonarQube Analysis..."
+                sh """
+                    echo "Running SonarQube Analysis..."
 
-                sonar-scanner \
-                -Dsonar.projectKey=Book-my-show \
-                -Dsonar.projectName=Book-my-show \
-                -Dsonar.sources=src
+                    sonar-scanner \
+                    -Dsonar.projectKey=Book-my-show \
+                    -Dsonar.projectName=Book-my-show \
+                    -Dsonar.sources=src
 
-                echo "SonarQube Analysis Completed"
-                '''
+                    echo "SonarQube Analysis Completed"
+                """
             }
         }
     }
 }
-        stage('Quality Gate') {
+stage('Quality Gate') {
 
             steps {
 
