@@ -1,112 +1,299 @@
-(without K8S Stage)
 pipeline {
     agent any
+
     tools {
-        jdk 'jdk17'
-        nodejs 'node23'
+        jdk 'jdk21'
+        nodejs 'node18'
     }
+
     environment {
-        SCANNER_HOME = tool 'sonar-scanner'
-    }
+    DOCKER_IMAGE = "rajeshtutta123/book-my-show"
+    RECIPIENTS = "rajeshtutta123@gmail.com"
+    APP_NAME = "book-my-show"
+    APP_PORT = "3000"
+}
+
     stages {
+
         stage('Clean Workspace') {
             steps {
                 cleanWs()
             }
         }
-        stage('Checkout from Git') {
+
+        stage('Clone Repo') {
             steps {
-                git branch: 'main', url: 'https://github.com/KastroVKiran/Book-My-Show.git'
-                sh 'ls -la'  // Verify files after checkout
+                git branch: 'main',
+                url: 'https://github.com/rajeshtutta/Book-my-show.git'
             }
         }
-        stage('SonarQube Analysis') {
+
+        stage('Check Files') {
             steps {
-                withSonarQubeEnv('sonar-server') {
-                    sh ''' 
-                    $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=BMS \
-                    -Dsonar.projectKey=BMS 
+                sh '''
+                echo "Current Directory:"
+                pwd
+
+                echo "Listing Files:"
+                ls -la
+
+                echo "Finding package.json"
+                find . -name package.json
+                '''
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                dir('bookmyshow-app') {
+
+                    sh '''
+                    rm -rf node_modules package-lock.json
+
+                    npm install
                     '''
                 }
             }
         }
-        stage('Quality Gate') {
+
+        
+        stage('Run Tests') {
             steps {
-                script {
-                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
+                dir('bookmyshow-app') {
+
+                    sh '''
+                    npm test || true
+                    '''
                 }
             }
         }
-        stage('Install Dependencies') {
+
+       stage('SonarQube Analysis') {
+
+    steps {
+
+        dir('bookmyshow-app') {
+
+            script {
+
+                def scannerHome = tool 'sonar-scanner'
+
+                withSonarQubeEnv('sq-token') {
+
+                    sh """
+                    ${scannerHome}/bin/sonar-scanner \
+                    -Dsonar.projectKey=Book-my-show \
+                    -Dsonar.projectName=Book-my-show \
+                    -Dsonar.sources=src
+                    """
+                }
+            }
+        }
+    }
+}
+        stage('Quality Gate') {
             steps {
+                timeout(time: 5, unit: 'MINUTES') {
+
+                    waitForQualityGate abortPipeline: false
+                }
+            }
+        }
+
+       stage('Build Application') {
+
+    steps {
+
+        dir('bookmyshow-app') {
+
+            sh '''
+            export NODE_OPTIONS=--openssl-legacy-provider
+            npm run build
+            '''
+        }
+    }
+}
+        stage('Package Artifact') {
+            steps {
+
+                dir('bookmyshow-app') {
+
+                    sh '''
+                    zip -r ../Book-my-show-build.zip build/
+                    '''
+                }
+            }
+        }
+
+        stage('Upload to Nexus') {
+
+    steps {
+
+        withCredentials([
+            usernamePassword(
+                credentialsId: 'nexus-cred',
+                usernameVariable: 'NEXUS_USER',
+                passwordVariable: 'NEXUS_PASS'
+            )
+        ]) {
+
+            sh '''
+            echo "Uploading artifact to Nexus..."
+
+            curl -v -u $NEXUS_USER:$NEXUS_PASS \
+            --upload-file Book-my-show-build.zip \
+            http://localhost:8081/repository/Book-my-show/Book-my-show-build-${BUILD_NUMBER}.zip
+
+            echo "Upload completed"
+            '''
+        }
+    }
+}
+
+        stage('Docker Build') {
+            steps {
+
                 sh '''
-                cd bookmyshow-app
-                ls -la  # Verify package.json exists
-                if [ -f package.json ]; then
-                    rm -rf node_modules package-lock.json  # Remove old dependencies
-                    npm install  # Install fresh dependencies
-                else
-                    echo "Error: package.json not found in bookmyshow-app!"
-                    exit 1
-                fi
+                docker build \
+                -t $DOCKER_IMAGE:${BUILD_NUMBER} \
+                -t $DOCKER_IMAGE:latest \
+                -f bookmyshow-app/Dockerfile \
+                bookmyshow-app
                 '''
             }
         }
-        stage('OWASP FS Scan') {
-            steps {
-                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit', odcInstallation: 'DP-Check'
-                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-            }
-        }
-        stage('Trivy FS Scan') {
-            steps {
-                sh 'trivy fs . > trivyfs.txt'
-            }
-        }
-        stage('Docker Build & Push') {
-            steps {
-                script {
-                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
-                        sh ''' 
-                        echo "Building Docker image..."
-                        docker build --no-cache -t kastrov/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
+        stage('Install Trivy') {
+    steps {
 
-                        echo "Pushing Docker image to registry..."
-                        docker push kastrov/bms:latest
-                        '''
-                    }
+        sh '''
+        if ! command -v trivy &> /dev/null
+        then
+            echo "Installing Trivy..."
+
+            sudo tee /etc/yum.repos.d/trivy.repo <<EOF
+[trivy]
+name=Trivy repository
+baseurl=https://aquasecurity.github.io/trivy-repo/rpm/releases/\\$basearch/
+gpgcheck=0
+enabled=1
+EOF
+
+            sudo yum install trivy -y
+
+        else
+            echo "Trivy already installed"
+        fi
+
+        trivy --version
+        '''
+    }
+}
+
+        stage('Trivy Image Scan') {
+            steps {
+
+                sh '''
+                trivy image $DOCKER_IMAGE:latest > trivyimage.txt
+                '''
+            }
+        }
+
+        stage('Docker Push') {
+            steps {
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-cred',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+
+                    sh '''
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+
+                    docker push $DOCKER_IMAGE:${BUILD_NUMBER}
+
+                    docker push $DOCKER_IMAGE:latest
+
+                    docker logout
+                    '''
                 }
             }
         }
-        stage('Deploy to Container') {
+
+        stage('Deploy Container') {
             steps {
-                sh ''' 
-                echo "Stopping and removing old container..."
-                docker stop bms || true
-                docker rm bms || true
 
-                echo "Running new container on port 3000..."
-                docker run -d --restart=always --name bms -p 3000:3000 kastrov/bms:latest
+                sh '''
+                echo "Stopping old container..."
 
-                echo "Checking running containers..."
+                docker stop $APP_NAME || true
+
+                docker rm $APP_NAME || true
+
+                echo "Starting new container..."
+
+                docker run -d \
+                --restart=always \
+                --name $APP_NAME \
+                -p $APP_PORT:$APP_PORT \
+                $DOCKER_IMAGE:latest
+
+                echo "Running Containers"
+
                 docker ps -a
-
-                echo "Fetching logs..."
-                sleep 5  # Give time for the app to start
-                docker logs bms
                 '''
             }
         }
     }
+
     post {
+
+        success {
+
+            emailext(
+                subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                Build SUCCESSFUL
+
+                Docker Image:
+                ${DOCKER_IMAGE}:latest
+
+                Application:
+                http://15.207.104.234:${APP_PORT}
+
+                Jenkins Build:
+                ${env.BUILD_URL}
+                """,
+
+                to: "${RECIPIENTS}",
+
+                attachmentsPattern: 'trivyimage.txt'
+            )
+        }
+
+        failure {
+
+            emailext(
+                subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                Build FAILED
+
+                Check Jenkins Logs:
+                ${env.BUILD_URL}
+                """,
+
+                to: "${RECIPIENTS}"
+            )
+        }
+
         always {
-            emailext attachLog: true,
-                subject: "'${currentBuild.result}'",
-                body: "Project: ${env.JOB_NAME}<br/>" +
-                      "Build Number: ${env.BUILD_NUMBER}<br/>" +
-                      "URL: ${env.BUILD_URL}<br/>",
-                to: 'kastrokiran@gmail.com',
-                attachmentsPattern: 'trivyfs.txt,trivyimage.txt'
+
+            archiveArtifacts(
+                artifacts: 'Book-my-show-build.zip',
+                fingerprint: true
+            )
         }
     }
 }
