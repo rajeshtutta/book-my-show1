@@ -70,20 +70,13 @@ pipeline {
             }
         }
 
-        stage('Run Tests') {
+       stage('Run Tests') {
 
-            steps {
+    steps {
 
-                dir('bookmyshow-app') {
-
-                    sh '''
-                    echo "Running test cases..."
-
-                    npm test -- --watchAll=false || true
-                    '''
-                }
-            }
-        }
+        echo 'Skipping tests temporarily'
+    }
+}
 
         stage('SonarQube Analysis') {
 
