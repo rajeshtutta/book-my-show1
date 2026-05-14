@@ -84,22 +84,28 @@ pipeline {
 
         dir('bookmyshow-app') {
 
-            withSonarQubeEnv('sonar-scanner') {
+            script {
 
-                sh """
-                    echo "Running SonarQube Analysis..."
+                def scannerHome = tool 'sonar-scanner'
 
-                    sonar-scanner \
-                    -Dsonar.projectKey=Book-my-show \
-                    -Dsonar.projectName=Book-my-show \
-                    -Dsonar.sources=src
+                withSonarQubeEnv('sonar-scanner') {
 
-                    echo "SonarQube Analysis Completed"
-                """
+                    sh """
+                        echo "Running SonarQube Analysis..."
+
+                        ${scannerHome}/bin/sonar-scanner \
+                        -Dsonar.projectKey=Book-my-show \
+                        -Dsonar.projectName=Book-my-show \
+                        -Dsonar.sources=src
+
+                        echo "SonarQube Analysis Completed"
+                    """
+                }
             }
         }
     }
 }
+
 stage('Quality Gate') {
 
             steps {
